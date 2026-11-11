@@ -1,21 +1,43 @@
-import { DATA_ORIGIN, mockReports, mockIncidents, mockGraphs, getMockPriority, mockSimulate } from './data/mockData'
+import { Routes, Route, Link } from 'react-router-dom'
+import AppShell from './components/layout/AppShell'
+import EmptyState from './components/ui/EmptyState'
+import Button from './components/ui/Button'
+import OverviewPage from './pages/OverviewPage'
+import IncidentMapPage from './pages/IncidentMapPage'
+import IncidentQueuePage from './pages/IncidentQueuePage'
+import AiAnalysisPage from './pages/AiAnalysisPage'
+import EvidenceGraphPage from './pages/EvidenceGraphPage'
+import RescuePriorityPage from './pages/RescuePriorityPage'
+import SimulationPage from './pages/SimulationPage'
+import VerificationPage from './pages/VerificationPage'
+import IncidentDetailsPage from './pages/IncidentDetailsPage'
 
-function App() {
-  const sim = mockSimulate({ affected_population: 12000, disaster_severity: 4, rescue_teams: 6, blocked_roads: 3, available_ambulances: 5 })
+function NotFound() {
   return (
-    <div className="min-h-screen bg-navy-950 p-8">
-      <h1 className="text-3xl font-bold text-accent">CrisisLens</h1>
-      <p className="mt-2 inline-block rounded bg-verify/20 px-2 py-1 text-verify">Data: {DATA_ORIGIN}</p>
-      <ul className="mt-6 space-y-1 text-text-muted">
-        <li>Reports: {mockReports.length}</li>
-        <li>Incidents: {mockIncidents.length}</li>
-        <li>Graph nodes for inc_001: {mockGraphs.inc_001.nodes.length}</li>
-        <li>Top urgency incident: {getMockPriority('urgency').items[0].title}</li>
-        <li>Top verify-first incident: {getMockPriority('verification').items[0].title}</li>
-        <li>Simulated shortages: {sim.results.shortages.length}</li>
-      </ul>
-    </div>
+    <EmptyState
+      title="Page not found"
+      description="That address does not exist in CrisisLens."
+      action={<Link to="/"><Button>Back to overview</Button></Link>}
+    />
   )
 }
 
-export default App
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route index element={<OverviewPage />} />
+        <Route path="map" element={<IncidentMapPage />} />
+        <Route path="incidents" element={<IncidentQueuePage />} />
+        <Route path="incidents/:id" element={<IncidentDetailsPage />} />
+        <Route path="analysis" element={<AiAnalysisPage />} />
+        <Route path="graph" element={<EvidenceGraphPage />} />
+        <Route path="graph/:id" element={<EvidenceGraphPage />} />
+        <Route path="priority" element={<RescuePriorityPage />} />
+        <Route path="simulation" element={<SimulationPage />} />
+        <Route path="verification" element={<VerificationPage />} />
+        <Route path="*" element={<NotFound />} />
+      </Route>
+    </Routes>
+  )
+}
