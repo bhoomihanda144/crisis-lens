@@ -58,17 +58,68 @@ class SimulationService:
         delay_minutes = (payload.blocked_roads * 5) + (team_shortfall * 2)
 
         # 4. Priority changes under this scenario
+        # Use real incidents from the database — never hardcode incident IDs or titles
         priority_changes: List[PriorityChange] = []
-        if payload.blocked_roads >= 2 or team_shortfall > 0:
-            priority_changes.append(
-                PriorityChange(
-                    incident_id="inc_002",
-                    title="Reported structural collapse, Koramangala",
-                    baseline_rank=2,
-                    scenario_rank=1,
-                    reason="Access roads blocked, fewer teams available",
+        try:
+            incidents_res = supabase.table("incidents").select("id, title, location_label, severity").execute()
+            live_incidents = incidents_res.data or []
+
+            if live_incidents and (payload.blocked_roads > 0 or team_shortfall > 0):
+                # Fetch stored priority scores so we can base ranks on real urgency
+                inc_ids = [i["id"] for i in live_incidents]
+                scores_res = supabase.table("priority_scores").select("incident_id, urgency_score").in_(
+                    "incident_id", inc_ids
+                ).execute()
+                scores_map = {s["incident_id"]: s["urgency_score"] for s in (scores_res.data or [])}
+
+                # Assign baseline urgency score (fallback to severity-based heuristic)
+                severity_fallback = {"critical": 90, "high": 70, "medium": 50, "low": 25}
+                ranked = sorted(
+                    live_incidents,
+                    key=lambda i: scores_map.get(i["id"], severity_fallback.get(i.get("severity", "medium"), 50)),
+                    reverse=True,
                 )
-            )
+
+                for baseline_rank, inc in enumerate(ranked, start=1):
+                    # Scenario: blocked roads raise urgency of incidents that need fast access
+                    # team shortage raises priority of incidents needing most personnel
+                    base_score = scores_map.get(inc["id"], severity_fallback.get(inc.get("severity", "medium"), 50))
+                    # Penalty if roads are blocked (harder to reach high-urgency sites)
+                    road_penalty = payload.blocked_roads * 5
+                    # Penalty if teams are short (high-urgency incidents compete harder)
+                    team_penalty = team_shortfall * 3
+                    scenario_score = max(0, base_score - road_penalty - team_penalty)
+
+                    # Only emit a priority_change entry when the scenario meaningfully shifts rank
+                    if road_penalty > 0 or team_penalty > 0:
+                        # Recalculate scenario rank order
+                        scenario_scores = {
+                            i["id"]: max(0, scores_map.get(i["id"], severity_fallback.get(i.get("severity", "medium"), 50))
+                                         - payload.blocked_roads * 5 - team_shortfall * 3)
+                            for i in ranked
+                        }
+                        scenario_ranked = sorted(ranked, key=lambda i: scenario_scores[i["id"]], reverse=True)
+                        scenario_rank = next(
+                            (idx + 1 for idx, si in enumerate(scenario_ranked) if si["id"] == inc["id"]), baseline_rank
+                        )
+                        if scenario_rank != baseline_rank:
+                            reasons = []
+                            if payload.blocked_roads > 0:
+                                reasons.append(f"{payload.blocked_roads} road(s) blocked, slowing access")
+                            if team_shortfall > 0:
+                                reasons.append(f"Rescue team shortfall of {team_shortfall}")
+                            priority_changes.append(
+                                PriorityChange(
+                                    incident_id=inc["id"],
+                                    title=inc["title"],
+                                    baseline_rank=baseline_rank,
+                                    scenario_rank=scenario_rank,
+                                    reason="; ".join(reasons),
+                                )
+                            )
+        except Exception:
+            # DB unavailable during simulation — return no priority changes (never invent them)
+            priority_changes = []
 
         # 5. Scenario summary
         if shortages:

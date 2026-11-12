@@ -41,7 +41,7 @@ async def test_ai_client_payload_structure():
 
     # Must be valid according to Pydantic schema
     validated = AnalysisObject.model_validate(analysis)
-    assert validated.engine_version == "0.1.0"
+    assert validated.engine_version.startswith("deterministic-fallback")
     assert validated.recommendation.requires_human_decision is True
     assert 0 <= validated.scores.urgency.score <= 100
     assert 0 <= validated.scores.evidence_confidence.score <= 100

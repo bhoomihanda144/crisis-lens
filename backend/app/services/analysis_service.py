@@ -52,6 +52,40 @@ class AnalysisService:
         supabase.table("analysis_results").delete().eq("report_id", report_id).execute()
         supabase.table("analysis_results").insert(analysis_row).execute()
 
+        # 4b. Persist scores into priority_scores (upsert by incident_id)
+        # This keeps the priority dashboard consistent with analysis results
+        incident_id = target_report.get("incident_id")
+        if incident_id:
+            pri_id = generate_semantic_id("pri", "priority_scores")
+            recommendation = analysis_data.get("recommendation", {})
+            priority_row = {
+                "id": pri_id,
+                "incident_id": incident_id,
+                "urgency_score": scores["urgency"]["score"],
+                "urgency_level": scores["urgency"]["level"],
+                "urgency_reasons": scores["urgency"]["reasons"],
+                "evidence_confidence_score": scores["evidence_confidence"]["score"],
+                "evidence_confidence_level": scores["evidence_confidence"]["level"],
+                "evidence_confidence_reasons": scores["evidence_confidence"]["reasons"],
+                "verification_priority_score": scores["verification_priority"]["score"],
+                "verification_priority_level": scores["verification_priority"]["level"],
+                "verification_priority_reasons": scores["verification_priority"]["reasons"],
+                "explanation": recommendation.get("next_steps", []),
+                "recommended_next_steps": recommendation.get("next_steps", []),
+                "requires_human_decision": True,
+                "human_decision_status": "not_decided",
+                "updated_at": analysis_data["analyzed_at"],
+            }
+            try:
+                supabase.table("priority_scores").upsert(priority_row, on_conflict="incident_id").execute()
+            except Exception:
+                # Upsert failed (e.g. no unique constraint); fall back to delete+insert
+                try:
+                    supabase.table("priority_scores").delete().eq("incident_id", incident_id).execute()
+                    supabase.table("priority_scores").insert(priority_row).execute()
+                except Exception:
+                    pass
+
         # 5. Update report status to 'analyzed'
         supabase.table("reports").update({"status": ReportStatus.ANALYZED.value}).eq("id", report_id).execute()
 
