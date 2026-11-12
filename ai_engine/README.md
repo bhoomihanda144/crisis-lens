@@ -37,6 +37,7 @@ ai_engine/
 │   ├── freshness.py      # FreshnessAnalyzer (recent <=60m, aging 61-240m, stale >240m)
 │   ├── duplicate.py      # DuplicateDetector (disciplined multi-modal matching)
 │   ├── source.py         # SourceIndependenceAnalyzer (provenance & non-corroboration)
+│   ├── graph.py          # EvidenceGraphBuilder (DAG topology, relationships & NetworkX validation)
 │   └── analyzer.py       # ReportAnalyzer (multi-dimensional scores & orchestrator)
 └── tests/
     ├── __init__.py
@@ -45,7 +46,8 @@ ai_engine/
     ├── test_freshness.py # Freshness decay boundary tests
     ├── test_duplicate.py # Duplicate false-positive regression tests
     ├── test_source.py    # Source independence & original ID regression tests
-    └── test_analyze_api.py # POST /analyze & backend AnalysisObject compatibility tests
+    ├── test_analyze_api.py # POST /analyze & backend AnalysisObject compatibility tests
+    └── test_graph.py     # Evidence graph generation & NetworkX validation tests
 ```
 
 ## Getting Started
@@ -77,6 +79,8 @@ Interactive API documentation will be available at:
 - ReDoc: `http://127.0.0.1:8001/redoc`
 - Health check: `http://127.0.0.1:8001/health`
 - Analysis endpoint: `POST http://127.0.0.1:8001/analyze`
+- Graph endpoint (RESTful): `POST http://127.0.0.1:8001/incidents/{incident_id}/evidence-graph`
+- Graph endpoint (RPC): `POST http://127.0.0.1:8001/graph/generate`
 
 ## Core Intelligence Guardrails
 
@@ -106,3 +110,95 @@ Interactive API documentation will be available at:
   - `stale`: $> 240$ minutes
 - **Human Decision Mandate:** `requires_human_decision` is invariant (`true`).
 - **Graph Direction:** Edges originate from the later/derived report (`source`) and point to the earlier/reference report (`target`).
+
+### 5. Evidence Graph Generation (Stage 4)
+- **Structural vs. Provenance Semantics for `original`:** The `role="original"` represents the **structural root of the directed evidence graph**, NOT proof of verified real-world provenance.
+- **Preservation of Uncertainty:** When a root node's provenance is unestablished (`provenance="unknown"` or unverified), its display label is explicitly formatted as `Citizen (Unverified): <Location>` to prevent responders and frontend users from interpreting an unverified rumor as verified ground truth.
+- **NetworkX Topology Validation:** Validates the evidence graph as a strict Directed Acyclic Graph (DAG):
+  - Zero self-loops permitted (`source != target`).
+  - Invariant edge direction: `source` (later/derived report) $\rightarrow$ `target` (earlier/reference report).
+  - Cycle detection: Any cycle detected via `nx.simple_cycles()` raises an explicit `GraphValidationError` rather than silently dropping or modifying evidence.
+- **Zero Invented Relationships:** Reports that describe different emergency events or unrelated locations remain completely disconnected nodes. Relationships are only generated for explicit forwarding, verified duplicates ($\ge 0.55$), defensible corroboration, or explicitly supplied conflict evidence.
+
+## Backend Integration Guide for Member 2
+
+To generate evidence relationship graphs, Member 2's backend service (`backend/app/services/evidence_service.py` or `ai_client.py`) can invoke the AI Engine microservice:
+
+### Endpoint
+- **URL:** `POST http://127.0.0.1:8001/incidents/{incident_id}/evidence-graph` (or `POST http://127.0.0.1:8001/graph/generate`)
+- **Headers:** `Content-Type: application/json`
+
+### Request Payload (`GenerateGraphRequest`)
+```json
+{
+  "incident_id": "inc_001",
+  "reports": [
+    {
+      "id": "rpt_001",
+      "text": "Water entering basement apartments on Lake Road.",
+      "source_type": "citizen",
+      "source_name": "Resident A",
+      "location_label": "Lake Road, Bellandur",
+      "lat": 12.9304,
+      "lng": 77.6784,
+      "reported_at": "2026-11-12T13:00:00Z",
+      "forwarded_from": null,
+      "provenance": "verified_original"
+    },
+    {
+      "id": "rpt_002",
+      "text": "Water entering basement apartments on Lake Road.",
+      "source_type": "citizen",
+      "source_name": "Resident B",
+      "location_label": "Lake Road, Bellandur",
+      "lat": 12.9304,
+      "lng": 77.6784,
+      "reported_at": "2026-11-12T13:15:00Z",
+      "forwarded_from": "rpt_001"
+    }
+  ],
+  "conflicts": []
+}
+```
+
+### Response Payload (`EvidenceGraphResponse`)
+```json
+{
+  "incident_id": "inc_001",
+  "nodes": [
+    {
+      "id": "rpt_001",
+      "report_id": "rpt_001",
+      "label": "Citizen: Lake Road, Bellandur",
+      "role": "original",
+      "source_type": "citizen",
+      "source_name": "Resident A",
+      "timestamp": "2026-11-12T13:00:00Z",
+      "excerpt": "Water entering basement apartments on Lake Road.",
+      "freshness_status": "recent"
+    },
+    {
+      "id": "rpt_002",
+      "report_id": "rpt_002",
+      "label": "Citizen (Forwarded): Lake Road, Bellandur",
+      "role": "forwarded",
+      "source_type": "citizen",
+      "source_name": "Resident B",
+      "timestamp": "2026-11-12T13:15:00Z",
+      "excerpt": "Water entering basement apartments on Lake Road.",
+      "freshness_status": "recent"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_rpt_002_rpt_001_forwarded",
+      "source": "rpt_002",
+      "target": "rpt_001",
+      "type": "forwarded",
+      "label": "Forwarded from rpt_001",
+      "confidence": 1.0
+    }
+  ]
+}
+```
+

@@ -66,6 +66,7 @@ from ai_engine.schemas.simulation import (
 from ai_engine.schemas.internal import (
     ReportInput,
     AnalyzeRequest,
+    GenerateGraphRequest,
 )
 
 __all__ = [
@@ -128,5 +129,6 @@ __all__ = [
     # Internal
     "ReportInput",
     "AnalyzeRequest",
+    "GenerateGraphRequest",
 ]
 

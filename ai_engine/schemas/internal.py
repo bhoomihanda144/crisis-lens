@@ -6,6 +6,8 @@ These schemas define the payload exchanged between Member 2 (Backend) and Member
 from typing import List, Optional, Any, Dict
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ai_engine.schemas.analysis import ConflictItem
+
 
 class ReportInput(BaseModel):
     """Normalized report input schema.
@@ -73,4 +75,20 @@ class AnalyzeRequest(BaseModel):
         default_factory=list,
         description="List of existing candidate reports to compare against"
     )
+
+
+class GenerateGraphRequest(BaseModel):
+    """Payload sent by Member 2 to generate an incident evidence relationship graph."""
+    model_config = ConfigDict(extra="ignore")
+
+    incident_id: str = Field(..., description="Incident ID, e.g. inc_001")
+    reports: List[ReportInput] = Field(
+        default_factory=list,
+        description="List of reports associated with the incident",
+    )
+    conflicts: Optional[List[ConflictItem]] = Field(
+        default_factory=list,
+        description="Explicitly identified conflicts for relationship generation",
+    )
+
 
