@@ -8,3 +8,6 @@ export const reportStatusTone = {
   needs_more_info: 'verify',
 }
 export const verificationLevelTone = { low: 'verified', medium: 'verify', high: 'critical' }
+export const urgencyTone = { low: 'neutral', medium: 'info', high: 'critical', critical: 'critical' }
+export const confidenceTone = { low: 'verify', medium: 'info', high: 'verified' }
+export const verificationTone = { low: 'neutral', medium: 'verify', high: 'verify' }

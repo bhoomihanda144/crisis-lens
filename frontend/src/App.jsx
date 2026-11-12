@@ -11,13 +11,18 @@ import RescuePriorityPage from './pages/RescuePriorityPage'
 import SimulationPage from './pages/SimulationPage'
 import VerificationPage from './pages/VerificationPage'
 import IncidentDetailsPage from './pages/IncidentDetailsPage'
+import ApiTestPage from './pages/ApiTestPage'
 
 function NotFound() {
   return (
     <EmptyState
       title="Page not found"
       description="That address does not exist in CrisisLens."
-      action={<Link to="/"><Button>Back to overview</Button></Link>}
+      action={
+        <Link to="/">
+          <Button>Back to overview</Button>
+        </Link>
+      }
     />
   )
 }
@@ -36,6 +41,7 @@ export default function App() {
         <Route path="priority" element={<RescuePriorityPage />} />
         <Route path="simulation" element={<SimulationPage />} />
         <Route path="verification" element={<VerificationPage />} />
+        <Route path="api-test" element={<ApiTestPage />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
