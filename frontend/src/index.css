@@ -35,3 +35,22 @@ html {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
+/* Leaflet map: dark tiles and dark popups */
+.leaflet-container {
+  background: #0a1224;
+  font-family: inherit;
+}
+.dark-tiles .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--color-navy-800);
+  color: var(--color-text-primary);
+}
+.leaflet-container a {
+  color: var(--color-accent);
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--color-text-muted);
+}
