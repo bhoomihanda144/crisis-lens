@@ -21,3 +21,9 @@ export function labelOf(value) {
   const text = String(value).replace(/_/g, ' ')
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
+export function formatMinutes(m) {
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60)
+  const rest = m % 60
+  return rest ? `${h} h ${rest} min` : `${h} h`
+}
