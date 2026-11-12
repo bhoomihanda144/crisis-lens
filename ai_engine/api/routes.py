@@ -1,14 +1,17 @@
 """FastAPI route definitions for CrisisLens AI Engine."""
 
-from typing import Dict, Any
-from fastapi import APIRouter, HTTPException, status
+from typing import Dict, Any, Optional
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 
-from ai_engine.schemas.internal import AnalyzeRequest, GenerateGraphRequest
+from ai_engine.schemas.enums import PrioritySort
+from ai_engine.schemas.internal import AnalyzeRequest, GenerateGraphRequest, PriorityRankRequest
 from ai_engine.schemas.analysis import Analysis
+from ai_engine.schemas.incident import PriorityResponse
 from ai_engine.schemas.graph import EvidenceGraphResponse
 from ai_engine.modules.analyzer import ReportAnalyzer
 from ai_engine.modules.graph import EvidenceGraphBuilder, GraphValidationError
+from ai_engine.modules.priority import IncidentPriorityRanker
 
 router = APIRouter()
 
@@ -31,7 +34,7 @@ def get_health() -> HealthResponse:
         service="crisis-lens-ai-engine",
         version="0.1.0",
         port=8001,
-        stage="Stage 4 - Evidence Graph Generation Active",
+        stage="Stage 5 - Priority Ranking Engine Active",
     )
 
 
@@ -102,6 +105,55 @@ def generate_graph_rpc(request: GenerateGraphRequest) -> EvidenceGraphResponse:
         )
 
 
+@router.post(
+    "/incidents/priority",
+    response_model=PriorityResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Priority Ranking"],
+    summary="Compute incident rescue priority ranking",
+)
+def compute_priority_ranking(
+    request: PriorityRankRequest,
+    sort: Optional[str] = Query(None, description="Optional query sort override: 'urgency' or 'verification'"),
+) -> PriorityResponse:
+    """Computes deterministic incident priority ranking according to API Contract v1.0 Section 4.7.
+
+    Precedence Rule:
+    - If query parameter 'sort' is provided, it must be 'urgency' or 'verification', and overrides request.sort.
+    - If query parameter 'sort' is not provided, request.sort from the request body is used.
+    - Invalid sort values raise HTTP 422 validation_error.
+    """
+    effective_sort = request.sort
+    if sort is not None:
+        if sort.lower() in ["urgency", "verification"]:
+            effective_sort = PrioritySort(sort.lower())
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"error": {"code": "validation_error", "message": f"Invalid sort parameter '{sort}'. Must be 'urgency' or 'verification'.", "details": None}},
+            )
+
+    return IncidentPriorityRanker.rank_incidents(
+        incidents=request.incidents,
+        sort=effective_sort,
+    )
+
+
+@router.post(
+    "/priority/rank",
+    response_model=PriorityResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Priority Ranking"],
+    summary="Compute incident rescue priority ranking (RPC alias)",
+)
+def compute_priority_ranking_rpc(
+    request: PriorityRankRequest,
+    sort: Optional[str] = Query(None, description="Optional query sort override: 'urgency' or 'verification'"),
+) -> PriorityResponse:
+    """RPC alias for computing incident priority ranking."""
+    return compute_priority_ranking(request=request, sort=sort)
+
+
 @router.get("/", tags=["Root"])
 def get_root() -> Dict[str, Any]:
     """Root metadata endpoint."""
@@ -113,5 +165,7 @@ def get_root() -> Dict[str, Any]:
         "analyze_url": "/analyze",
         "graph_url": "/graph/generate",
         "incident_graph_url": "/incidents/{id}/evidence-graph",
+        "priority_url": "/incidents/priority",
+        "priority_rpc_url": "/priority/rank",
         "port": 8001,
     }

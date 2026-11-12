@@ -67,6 +67,8 @@ from ai_engine.schemas.internal import (
     ReportInput,
     AnalyzeRequest,
     GenerateGraphRequest,
+    IncidentInput,
+    PriorityRankRequest,
 )
 
 __all__ = [
@@ -130,5 +132,7 @@ __all__ = [
     "ReportInput",
     "AnalyzeRequest",
     "GenerateGraphRequest",
+    "IncidentInput",
+    "PriorityRankRequest",
 ]
 
