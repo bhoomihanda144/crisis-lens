@@ -5,10 +5,17 @@ Includes contract-compliant fallback analysis so the system remains fully operat
 even when Member 3's service is offline or in development.
 """
 import httpx
+import logging
 from typing import Dict, Any, List
 from app.core.config import settings
 from app.utils.datetime_utils import now_utc_iso, calculate_freshness
 from app.schemas.analysis import AnalysisObject
+
+logger = logging.getLogger(__name__)
+
+# Version tag for deterministic fallback — distinguishable from real AI output.
+# Member 3: coordinate this prefix string with your engine_version field.
+FALLBACK_ENGINE_VERSION = "deterministic-fallback-0.1.0"
 
 
 class AIClient:
@@ -20,6 +27,8 @@ class AIClient:
         """
         Calls Member 3's AI Engine endpoint.
         If unavailable, runs the deterministic contract-compliant intelligence engine.
+        Real AI output has engine_version set by Member 3's engine.
+        Deterministic fallback always has engine_version starting with 'deterministic-fallback'.
         """
         # Try to call Member 3's AI Engine service
         if settings.AI_ENGINE_URL:
@@ -37,11 +46,30 @@ class AIClient:
                         # Validate structure against AnalysisObject schema
                         validated = AnalysisObject.model_validate(raw_data)
                         return validated.model_dump(mode="json")
-            except Exception:
-                # Member 3 service offline or still in development; proceed with deterministic engine
-                pass
+                    else:
+                        logger.warning(
+                            "AI Engine at %s returned non-200 status %s. Using deterministic fallback.",
+                            settings.AI_ENGINE_URL,
+                            resp.status_code,
+                        )
+            except httpx.TimeoutException as exc:
+                logger.warning(
+                    "AI Engine request timed out (%s). Using deterministic fallback.",
+                    type(exc).__name__,
+                )
+            except httpx.ConnectError as exc:
+                logger.warning(
+                    "AI Engine connection failed (%s). Using deterministic fallback.",
+                    type(exc).__name__,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "AI Engine unavailable (%s). Using deterministic fallback.",
+                    type(exc).__name__,
+                )
 
         # Deterministic contract-compliant analysis engine
+        logger.info("Running deterministic fallback analysis (engine_version=%s).", FALLBACK_ENGINE_VERSION)
         return AIClient._compute_deterministic_analysis(report_data, existing_reports)
 
     @staticmethod
@@ -197,7 +225,7 @@ class AIClient:
 
         analysis_payload = {
             "analyzed_at": now_utc_iso(),
-            "engine_version": "0.1.0",
+            "engine_version": FALLBACK_ENGINE_VERSION,
             "duplicate": {
                 "is_duplicate": is_duplicate,
                 "matches": matches,
