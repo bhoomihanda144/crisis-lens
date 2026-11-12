@@ -5,13 +5,20 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 
 from ai_engine.schemas.enums import PrioritySort
-from ai_engine.schemas.internal import AnalyzeRequest, GenerateGraphRequest, PriorityRankRequest
+from ai_engine.schemas.internal import (
+    AnalyzeRequest,
+    GenerateGraphRequest,
+    PriorityRankRequest,
+    SimulationScenarioRequest,
+)
 from ai_engine.schemas.analysis import Analysis
 from ai_engine.schemas.incident import PriorityResponse
 from ai_engine.schemas.graph import EvidenceGraphResponse
+from ai_engine.schemas.simulation import SimulationRequest, SimulationResponse
 from ai_engine.modules.analyzer import ReportAnalyzer
 from ai_engine.modules.graph import EvidenceGraphBuilder, GraphValidationError
 from ai_engine.modules.priority import IncidentPriorityRanker
+from ai_engine.modules.simulation import DisasterSimulationEngine
 
 router = APIRouter()
 
@@ -34,7 +41,7 @@ def get_health() -> HealthResponse:
         service="crisis-lens-ai-engine",
         version="0.1.0",
         port=8001,
-        stage="Stage 5 - Priority Ranking Engine Active",
+        stage="Stage 6 - Simulation Engine Active",
     )
 
 
@@ -154,6 +161,37 @@ def compute_priority_ranking_rpc(
     return compute_priority_ranking(request=request, sort=sort)
 
 
+@router.post(
+    "/simulate",
+    response_model=SimulationResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["What-If Simulation"],
+    summary="Run what-if emergency disaster simulation",
+)
+def run_simulation(request: SimulationRequest) -> SimulationResponse:
+    """Computes deterministic what-if emergency scenario simulation per API Contract v1.0 Section 4.9.
+
+    Calculates:
+    - Resource demand (rescue teams and ambulances)
+    - Resource shortages (positive shortfalls)
+    - Estimated compound response delay
+    - Hypothetical priority ranking changes
+    """
+    return DisasterSimulationEngine.run_simulation(request)
+
+
+@router.post(
+    "/simulation/run",
+    response_model=SimulationResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["What-If Simulation"],
+    summary="Run what-if emergency disaster simulation (RPC alias)",
+)
+def run_simulation_rpc(request: SimulationScenarioRequest) -> SimulationResponse:
+    """RPC alias supporting optional active incident context for hypothetical priority re-ranking."""
+    return DisasterSimulationEngine.run_simulation(request)
+
+
 @router.get("/", tags=["Root"])
 def get_root() -> Dict[str, Any]:
     """Root metadata endpoint."""
@@ -167,5 +205,7 @@ def get_root() -> Dict[str, Any]:
         "incident_graph_url": "/incidents/{id}/evidence-graph",
         "priority_url": "/incidents/priority",
         "priority_rpc_url": "/priority/rank",
+        "simulate_url": "/simulate",
+        "simulation_rpc_url": "/simulation/run",
         "port": 8001,
     }

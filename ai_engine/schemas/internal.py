@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from ai_engine.schemas.enums import PrioritySort
 from ai_engine.schemas.analysis import ConflictItem, Analysis
 from ai_engine.schemas.incident import TimelineEntry
+from ai_engine.schemas.simulation import SimulationRequest
 
 
 class ReportInput(BaseModel):
@@ -168,3 +169,35 @@ class PriorityRankRequest(BaseModel):
         description="List of incidents to prioritize",
     )
 
+
+class SimulationScenarioRequest(BaseModel):
+    """Internal simulation request payload supporting optional incident context and access impact."""
+    model_config = ConfigDict(extra="ignore")
+
+    scenario_name: str = Field(..., min_length=1, description="Descriptive scenario name")
+    affected_population: int = Field(..., ge=0, description="Estimated affected population")
+    disaster_severity: int = Field(..., ge=1, le=5, description="Severity integer from 1 to 5")
+    rescue_teams: int = Field(..., ge=0, description="Available rescue teams")
+    blocked_roads: int = Field(..., ge=0, description="Number of blocked arterial roads")
+    available_ambulances: int = Field(..., ge=0, description="Available emergency ambulances")
+
+    # Optional internal integration fields
+    incidents: Optional[List[IncidentInput]] = Field(
+        default_factory=list,
+        description="Optional active incident context for hypothetical priority re-ranking",
+    )
+    blocked_access_incident_ids: Optional[List[str]] = Field(
+        default_factory=list,
+        description="Explicit incident IDs where arterial access routes are blocked",
+    )
+
+    def to_public_request(self) -> SimulationRequest:
+        """Converts to the strict public SimulationRequest schema."""
+        return SimulationRequest(
+            scenario_name=self.scenario_name,
+            affected_population=self.affected_population,
+            disaster_severity=self.disaster_severity,
+            rescue_teams=self.rescue_teams,
+            blocked_roads=self.blocked_roads,
+            available_ambulances=self.available_ambulances,
+        )

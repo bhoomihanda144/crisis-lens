@@ -39,6 +39,7 @@ ai_engine/
 │   ├── source.py         # SourceIndependenceAnalyzer (provenance & non-corroboration)
 │   ├── graph.py          # EvidenceGraphBuilder (DAG topology, relationships & NetworkX validation)
 │   ├── priority.py       # IncidentPriorityRanker (3-score multi-dimensional ranking & explainability)
+│   ├── simulation.py     # DisasterSimulationEngine (what-if resource demand, delay & priority modeling)
 │   └── analyzer.py       # ReportAnalyzer (multi-dimensional scores & orchestrator)
 └── tests/
     ├── __init__.py
@@ -49,7 +50,8 @@ ai_engine/
     ├── test_source.py    # Source independence & original ID regression tests
     ├── test_analyze_api.py # POST /analyze & backend AnalysisObject compatibility tests
     ├── test_graph.py     # Evidence graph generation & NetworkX validation tests
-    └── test_priority.py  # Priority ranking & deterministic sorting tests
+    ├── test_priority.py  # Priority ranking & deterministic sorting tests
+    └── test_simulation.py # What-if disaster simulation tests
 ```
 
 ## Getting Started
@@ -85,6 +87,8 @@ Interactive API documentation will be available at:
 - Graph endpoint (RPC): `POST http://127.0.0.1:8001/graph/generate`
 - Priority endpoint (RESTful): `POST http://127.0.0.1:8001/incidents/priority`
 - Priority endpoint (RPC): `POST http://127.0.0.1:8001/priority/rank`
+- Simulation endpoint (RESTful): `POST http://127.0.0.1:8001/simulate`
+- Simulation endpoint (RPC): `POST http://127.0.0.1:8001/simulation/run`
 
 ## Core Intelligence Guardrails
 
@@ -132,6 +136,24 @@ Interactive API documentation will be available at:
   - When `sort="urgency"`: Primary sort by `urgency.score` descending, secondary by `verification_priority.score` descending, tertiary by `incident_id` ascending.
   - When `sort="verification"`: Primary sort by `verification_priority.score` descending, secondary by `urgency.score` descending, tertiary by `incident_id` ascending.
 - **Human Decision Authority:** Invariant `requires_human_decision=True` and `human_decision.status="not_decided"`. The AI Engine never executes autonomous dispatch.
+
+### 7. What-If Disaster Simulation Engine (Stage 6)
+- **Baseline Resource Demand Formulas:**
+  - Demanded rescue teams: $\max(2, \lfloor (\text{affected\_population} / 1500) \times (\text{disaster\_severity} / 2.5) \rfloor)$
+  - Demanded ambulances: $\max(2, \lfloor (\text{affected\_population} / 2000) \times (\text{disaster\_severity} / 2.0) \rfloor)$
+- **Resource Shortages:**
+  - $\text{shortfall} = \max(0, \text{required} - \text{available})$. Only positive shortfalls are included in the results.
+- **Compound Response Delay Formula:**
+  - $\text{delay\_minutes} = (\text{blocked\_roads} \times 5) + (\text{rescue\_team\_shortfall} \times 2)$
+- **Assumptions & Model Boundaries:**
+  - Baseline minimum of 2 rescue teams and 2 ambulances required for any declared disaster zone regardless of population.
+  - Road blockage penalty assumes an average 5-minute detour/rerouting delay per impassable arterial route.
+  - Team deficit penalty assumes an average 2-minute dispatch queuing backlog per missing rescue team.
+  - The public simulation request specifies the count of blocked roads, not their geographic locations. Incident-specific access obstruction is only applied when explicit access-impact context (`blocked_access_incident_ids`) is provided by the caller.
+  - When incident context is omitted or empty, `priority_changes` is strictly empty. Synthetic or invented incident records are never generated.
+- **Strict Isolation & Simulation Invariants:**
+  - Invariant `is_simulation: True` on all outputs to guarantee simulated projections are clearly distinguished from live disaster records.
+  - Projections are advisory planning estimates and do not execute automated dispatch or mutate live incident priority scores.
 
 ## Backend Integration Guide for Member 2
 
@@ -333,4 +355,118 @@ To rank emergency rescue queues, Member 2's backend service invokes:
     }
   ]
 }
+```
+
+### Disaster Simulation Engine Integration
+
+To simulate what-if emergency scenarios and evaluate resource bottlenecks, Member 2's backend service invokes:
+
+#### Endpoints
+- **Public RESTful Endpoint:** `POST http://127.0.0.1:8001/simulate` (Accepts `SimulationRequest`)
+- **Internal RPC Endpoint:** `POST http://127.0.0.1:8001/simulation/run` (Accepts `SimulationScenarioRequest` with optional active incident context)
+- **Headers:** `Content-Type: application/json`
+
+#### Public Request Payload (`SimulationRequest`)
+```json
+{
+  "scenario_name": "Heavy rain, 3 roads blocked",
+  "affected_population": 12000,
+  "disaster_severity": 4,
+  "rescue_teams": 6,
+  "blocked_roads": 3,
+  "available_ambulances": 5
+}
+```
+
+#### Response Payload (`SimulationResponse`)
+```json
+{
+  "scenario_id": "sim_4949bdc5",
+  "is_simulation": true,
+  "generated_at": "2026-11-12T14:45:00Z",
+  "inputs": {
+    "scenario_name": "Heavy rain, 3 roads blocked",
+    "affected_population": 12000,
+    "disaster_severity": 4,
+    "rescue_teams": 6,
+    "blocked_roads": 3,
+    "available_ambulances": 5
+  },
+  "results": {
+    "resource_demand": {
+      "rescue_teams": 12,
+      "ambulances": 12
+    },
+    "shortages": [
+      {
+        "resource": "rescue_teams",
+        "required": 12,
+        "available": 6,
+        "shortfall": 6
+      },
+      {
+        "resource": "ambulances",
+        "required": 12,
+        "available": 5,
+        "shortfall": 7
+      }
+    ],
+    "estimated_response_delay_minutes": 27,
+    "priority_changes": [],
+    "summary": "Rescue teams are short by 6, ambulances are short by 7 under this scenario. Estimated response delay: 27 minutes. Note: Projections are hypothetical planning estimates for responder readiness and do not constitute automated dispatch actions."
+  }
+}
+```
+
+#### Internal RPC Request with Incident Re-ranking (`SimulationScenarioRequest`)
+When Member 2 passes active incidents and explicit road blockage information to `POST /simulation/run`:
+```json
+{
+  "scenario_name": "Heavy rain, 3 roads blocked",
+  "affected_population": 12000,
+  "disaster_severity": 4,
+  "rescue_teams": 6,
+  "blocked_roads": 3,
+  "available_ambulances": 10,
+  "incidents": [
+    {
+      "id": "inc_001",
+      "title": "Active flood at Lake Road",
+      "type": "flood",
+      "severity": "critical",
+      "status": "active",
+      "location_label": "Lake Road",
+      "independent_source_count": 3
+    },
+    {
+      "id": "inc_002",
+      "title": "Reported structural collapse, Koramangala",
+      "type": "structural",
+      "severity": "high",
+      "status": "active",
+      "location_label": "Koramangala",
+      "independent_source_count": 2
+    }
+  ],
+  "blocked_access_incident_ids": ["inc_002"]
+}
+```
+The response dynamically calculates hypothetical queue changes without touching live incident database state:
+```json
+"priority_changes": [
+  {
+    "incident_id": "inc_002",
+    "title": "Reported structural collapse, Koramangala",
+    "baseline_rank": 2,
+    "scenario_rank": 1,
+    "reason": "Access roads blocked, fewer teams available"
+  },
+  {
+    "incident_id": "inc_001",
+    "title": "Active flood at Lake Road",
+    "baseline_rank": 1,
+    "scenario_rank": 2,
+    "reason": "Operational constraints shifted queue position from #1 to #2"
+  }
+]
 ```
