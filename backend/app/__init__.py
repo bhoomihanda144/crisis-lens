@@ -1,1 +1,3 @@
-"""CrisisLens Backend Application Package."""
+"""
+CrisisLens Application Package
+"""
