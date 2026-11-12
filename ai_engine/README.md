@@ -1,0 +1,108 @@
+# CrisisLens AI Engine
+
+Trust-Aware Emergency Intelligence System  
+**Member 3 – AI/ML Developer Component**
+
+## Architecture Overview
+
+The CrisisLens AI Engine is designed with a **dual invocation architecture**:
+1. **Reusable Python Library:** Direct importable modules for Member 2's backend (`from ai_engine.modules import ReportAnalyzer`).
+2. **Thin FastAPI Microservice:** An independent HTTP service running on `http://127.0.0.1:8001` (`POST /analyze`, `GET /health`) for decoupled testing, development, and standalone container deployment.
+
+All schemas strictly enforce `docs/api-contract.md` v1.0.
+
+## Directory Structure
+
+```text
+ai_engine/
+├── __init__.py           # Package version and export definitions
+├── README.md             # This documentation
+├── requirements.txt      # Engine dependency specifications
+├── main.py               # FastAPI application entrypoint (Port 8001)
+├── api/
+│   ├── __init__.py
+│   └── routes.py         # Route handlers (/health, /analyze, etc.)
+├── schemas/              # Pydantic v2 schemas reflecting API Contract v1.0
+│   ├── __init__.py
+│   ├── enums.py          # Fixed contract enums
+│   ├── common.py         # Location, 3-score models, error response
+│   ├── analysis.py       # Analysis, duplicate, source, freshness, conflict schemas
+│   ├── report.py         # Report, ReportSource, Verification schemas
+│   ├── incident.py       # Incident, TimelineEntry, Priority schemas
+│   ├── graph.py          # EvidenceNode, EvidenceEdge, EvidenceGraphResponse
+│   ├── simulation.py     # SimulationRequest, ResourceDemand, SimulationResponse
+│   └── internal.py       # Internal exchange schemas (ReportInput, AnalyzeRequest)
+├── modules/              # Deterministic, explainable intelligence modules
+│   ├── __init__.py
+│   ├── freshness.py      # FreshnessAnalyzer (recent <=60m, aging 61-240m, stale >240m)
+│   ├── duplicate.py      # DuplicateDetector (disciplined multi-modal matching)
+│   ├── source.py         # SourceIndependenceAnalyzer (provenance & non-corroboration)
+│   └── analyzer.py       # ReportAnalyzer (multi-dimensional scores & orchestrator)
+└── tests/
+    ├── __init__.py
+    ├── test_health.py    # Microservice health check test suite
+    ├── test_schemas.py   # Schema validation and contract compliance tests
+    ├── test_freshness.py # Freshness decay boundary tests
+    ├── test_duplicate.py # Duplicate false-positive regression tests
+    ├── test_source.py    # Source independence & original ID regression tests
+    └── test_analyze_api.py # POST /analyze & backend AnalysisObject compatibility tests
+```
+
+## Getting Started
+
+### 1. Environment Setup
+Activate the Python virtual environment:
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Install requirements:
+```powershell
+pip install -r ai_engine/requirements.txt
+```
+
+### 2. Running Tests
+Run all unit, contract, and intelligence regression tests:
+```powershell
+python -m pytest ai_engine/tests -v
+```
+
+### 3. Launching the AI Microservice
+Start the development server on `http://127.0.0.1:8001`:
+```powershell
+uvicorn ai_engine.main:app --host 127.0.0.1 --port 8001 --reload
+```
+Interactive API documentation will be available at:
+- Swagger UI: `http://127.0.0.1:8001/docs`
+- ReDoc: `http://127.0.0.1:8001/redoc`
+- Health check: `http://127.0.0.1:8001/health`
+- Analysis endpoint: `POST http://127.0.0.1:8001/analyze`
+
+## Core Intelligence Guardrails
+
+### 1. Disciplined Duplicate Detection
+- **No Location-Only Matches:** Same location alone NEVER establishes a duplicate.
+- **No Time-Only Matches:** Temporal proximity alone NEVER establishes a duplicate.
+- **No Generic-Only Matches:** Generic emergency words ("water", "flood", "building", "road", "incident") alone are NEVER sufficient evidence.
+- **Mandatory Content Overlap:** Two reports must share distinctive, informative tokens before location or temporal proximity can strengthen a duplicate match.
+- **Explicit Forwarding:** Explicit `forwarded_from` links or forwarding language establish high-confidence duplicate linkage with reason `"Direct forwarded marker or reference"`.
+
+### 2. Source Independence & Provenance Limitations
+- **Current Schema Boundary:** Under CrisisLens API Contract v1.0, incoming reports provide `source.type` and `source.name`, but lack cryptographic authentication, origin IP, or verifiable identity credentials.
+- **Strict Adherence (No Invented Provenance):** The AI engine NEVER assumes that a citizen, news, official, responder, or sensor report is independent solely because of its `source_type`.
+- **Default to Unknown:** If explicit, verifiable provenance is absent, `independence` is strictly set to `"unknown"`.
+- **Forwarded Detection:** Reports containing forwarding markers or `forwarded_from` references are classified as `independence = "forwarded"`.
+- **Corroboration Integrity:** Forwarded reports NEVER increase independent corroboration counts. Independent corroboration (`corroboration_status = "corroborated"`) strictly requires defensible evidence that multiple reports originated from verified independent sources.
+
+### 3. Original Report Identification
+- `original_report_id` is ONLY populated when an explicit forwarding reference (`forwarded_from` or explicit parent reference in text) identifies the source.
+- Similar non-forwarded reports are NEVER assumed to be the original. In the absence of an explicit forwarding reference, `original_report_id` is set to `null` (`None`).
+
+### 4. Contract Guarantees
+- **Separation of Scores:** Urgency (4 levels), Evidence Confidence (3 levels), and Verification Priority (3 levels) are strictly separate. No single combined score exists.
+- **Fixed Freshness Decay:**
+  - `recent`: $\le 60$ minutes
+  - `aging`: $61$ to $240$ minutes
+  - `stale`: $> 240$ minutes
+- **Human Decision Mandate:** `requires_human_decision` is invariant (`true`).
+- **Graph Direction:** Edges originate from the later/derived report (`source`) and point to the earlier/reference report (`target`).
